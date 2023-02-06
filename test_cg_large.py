@@ -17,7 +17,7 @@ ctheta = 4 # chunk size for angles (to fit GPU memory)
 theta = np.linspace(0, 360, ntheta, endpoint=True).astype('float32')
 
 # read [nz,n,n] part of an object [256,256,256]
-u = -dxchange.read_tiff('data/delta-chip-256.tiff')[128-nz//2:128+nz//2]
+u = -dxchange.read_tiff('data/delta-chip-256.tiff')[128-nz//2:128+nz//2]+1j*(dxchange.read_tiff('data/delta-chip-256.tiff')[128-nz//2:128+nz//2])
 
 # zooming
 n*=zoom

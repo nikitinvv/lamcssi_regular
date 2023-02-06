@@ -5,7 +5,7 @@ CUDA Raw kernels for computing back-projection to orthogonal slices
 import cupy as cp
 source = """
 extern "C" {    
-    void __global__ fwd(float *data, float *f, float *theta, float phi, int n, int nz, int deth, int ntheta)
+    void __global__ fwd(float2 *data, float2 *f, float *theta, float phi, int n, int nz, int deth, int ntheta)
     {
         int tx = blockDim.x * blockIdx.x + threadIdx.x;
         int ty = blockDim.y * blockIdx.y + threadIdx.y;
@@ -20,7 +20,7 @@ extern "C" {
         int zr = 0;
         
         float theta0 = theta[ty];                
-        float data0 = 0;
+        float2 data0 = {0,0};
         float R[9] = {};
         for (int t = 0; t<n; t++)
         {
@@ -40,20 +40,29 @@ extern "C" {
                 x = x-xr;
                 y = y-yr;
                 z = z-zr;
-                data0 +=f[xr+0+(yr+0)*n+(zr+0)*n*n]*(1-x)*(1-y)*(1-z)+
-                        f[xr+1+(yr+0)*n+(zr+0)*n*n]*(0+x)*(1-y)*(1-z)+
-                        f[xr+0+(yr+1)*n+(zr+0)*n*n]*(1-x)*(0+y)*(1-z)+
-                        f[xr+1+(yr+1)*n+(zr+0)*n*n]*(0+x)*(0+y)*(1-z)+
-                        f[xr+0+(yr+0)*n+(zr+1)*n*n]*(1-x)*(1-y)*(0+z)+
-                        f[xr+1+(yr+0)*n+(zr+1)*n*n]*(0+x)*(1-y)*(0+z)+
-                        f[xr+0+(yr+1)*n+(zr+1)*n*n]*(1-x)*(0+y)*(0+z)+
-                        f[xr+1+(yr+1)*n+(zr+1)*n*n]*(0+x)*(0+y)*(0+z);
+                data0.x +=f[xr+0+(yr+0)*n+(zr+0)*n*n].x*(1-x)*(1-y)*(1-z)+
+                        f[xr+1+(yr+0)*n+(zr+0)*n*n].x*(0+x)*(1-y)*(1-z)+
+                        f[xr+0+(yr+1)*n+(zr+0)*n*n].x*(1-x)*(0+y)*(1-z)+
+                        f[xr+1+(yr+1)*n+(zr+0)*n*n].x*(0+x)*(0+y)*(1-z)+
+                        f[xr+0+(yr+0)*n+(zr+1)*n*n].x*(1-x)*(1-y)*(0+z)+
+                        f[xr+1+(yr+0)*n+(zr+1)*n*n].x*(0+x)*(1-y)*(0+z)+
+                        f[xr+0+(yr+1)*n+(zr+1)*n*n].x*(1-x)*(0+y)*(0+z)+
+                        f[xr+1+(yr+1)*n+(zr+1)*n*n].x*(0+x)*(0+y)*(0+z);
+                data0.y +=f[xr+0+(yr+0)*n+(zr+0)*n*n].y*(1-x)*(1-y)*(1-z)+
+                        f[xr+1+(yr+0)*n+(zr+0)*n*n].y*(0+x)*(1-y)*(1-z)+
+                        f[xr+0+(yr+1)*n+(zr+0)*n*n].y*(1-x)*(0+y)*(1-z)+
+                        f[xr+1+(yr+1)*n+(zr+0)*n*n].y*(0+x)*(0+y)*(1-z)+
+                        f[xr+0+(yr+0)*n+(zr+1)*n*n].y*(1-x)*(1-y)*(0+z)+
+                        f[xr+1+(yr+0)*n+(zr+1)*n*n].y*(0+x)*(1-y)*(0+z)+
+                        f[xr+0+(yr+1)*n+(zr+1)*n*n].y*(1-x)*(0+y)*(0+z)+
+                        f[xr+1+(yr+1)*n+(zr+1)*n*n].y*(0+x)*(0+y)*(0+z);
             }
         }
-        data[tx + tz * n + ty * n * deth] = data0*n;        
+        data[tx + tz * n + ty * n * deth].x = data0.x;        
+        data[tx + tz * n + ty * n * deth].y = data0.y;        
     }    
 
-    void __global__ adj(float *f, float *data, float *theta, float phi, int n, int nz, int deth, int ntheta)
+    void __global__ adj(float2 *f, float2 *data, float *theta, float phi, int n, int nz, int deth, int ntheta)
     {
         int tx = blockDim.x * blockIdx.x + threadIdx.x;
         int ty = blockDim.y * blockIdx.y + threadIdx.y;
@@ -65,7 +74,7 @@ extern "C" {
         int ur = 0;
         int vr = 0;        
         
-        float f0 = 0;
+        float2 f0 = {0,0};
         float theta0 = 0;
         float cphi = __cosf(phi);
         float sphi = __sinf(phi);
@@ -89,14 +98,19 @@ extern "C" {
             {
                 u = u-ur;
                 v = v-vr;                
-                f0 +=   data[ur+0+(vr+0)*n+t*n*deth]*(1-u)*(1-v)+
-                        data[ur+1+(vr+0)*n+t*n*deth]*(0+u)*(1-v)+
-                        data[ur+0+(vr+1)*n+t*n*deth]*(1-u)*(0+v)+
-                        data[ur+1+(vr+1)*n+t*n*deth]*(0+u)*(0+v);
+                f0.x +=   data[ur+0+(vr+0)*n+t*n*deth].x*(1-u)*(1-v)+
+                        data[ur+1+(vr+0)*n+t*n*deth].x*(0+u)*(1-v)+
+                        data[ur+0+(vr+1)*n+t*n*deth].x*(1-u)*(0+v)+
+                        data[ur+1+(vr+1)*n+t*n*deth].x*(0+u)*(0+v);
+                f0.y +=   data[ur+0+(vr+0)*n+t*n*deth].y*(1-u)*(1-v)+
+                        data[ur+1+(vr+0)*n+t*n*deth].y*(0+u)*(1-v)+
+                        data[ur+0+(vr+1)*n+t*n*deth].y*(1-u)*(0+v)+
+                        data[ur+1+(vr+1)*n+t*n*deth].y*(0+u)*(0+v);
                         
             }
         }
-        f[tx + ty * n + tz * n * n] += f0*n;        
+        f[tx + ty * n + tz * n * n].x += f0.x;        
+        f[tx + ty * n + tz * n * n].y += f0.y;        
     }    
 }
 """
