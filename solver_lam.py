@@ -12,12 +12,16 @@ class SolverLam():
     and provides correct cleanup for interruptions or terminations.
     Attribtues
     ----------
-    n : int
-        Object size in x, detector width
+    nx : int
+        Object size in x
+    ny : int
+        Object size in y
     nz : int
         Object size in z
     deth : int
         Detector height
+    detw : int
+        Detector width
     ntheta : int
         Number of projections
     ctheta : int
@@ -27,9 +31,11 @@ class SolverLam():
     lamino : float32
         Tilt angle for the rotary stage
     """
-    def __init__(self, n, nz, deth, ntheta, ctheta, theta, lamino_angle):
-        self.n = n
+    def __init__(self, nx, ny, nz, detw, deth, ntheta, ctheta, theta, lamino_angle):
+        self.nx = nx
+        self.ny = ny
         self.nz = nz
+        self.detw = detw
         self.deth = deth
         self.ntheta = ntheta
         self.ctheta = ctheta
@@ -48,13 +54,12 @@ class SolverLam():
         """Forward laminography operator data = Lu"""
         
         # result
-        data = np.zeros([self.ntheta, self.deth, self.n], dtype='float32')    
+        data = np.zeros([self.ntheta, self.deth, self.detw], dtype='float32')    
 
         # GPU memory
-        data_gpu = cp.zeros([self.ctheta, self.deth, self.n], dtype='float32')
+        data_gpu = cp.zeros([self.ctheta, self.deth, self.detw], dtype='float32')
         theta_gpu = cp.zeros([self.ctheta], dtype='float32')                
         u_gpu = cp.asarray(u)
-        
         # processing by chunks in angles
         for it in range(int(np.ceil(self.ntheta/self.ctheta))):
             st = it*self.ctheta
@@ -76,8 +81,8 @@ class SolverLam():
         """adjoint laminography operator u = L*data"""
         
         # GPU memory
-        data_gpu = cp.zeros([self.ctheta, self.deth, self.n], dtype='float32')
-        u_gpu = cp.zeros([self.nz, self.n, self.n], dtype='float32')
+        data_gpu = cp.zeros([self.ctheta, self.deth, self.detw], dtype='float32')
+        u_gpu = cp.zeros([self.nz, self.ny, self.nx], dtype='float32')
         theta_gpu = cp.zeros([self.ctheta], dtype='float32')                
         
         for it in range(int(np.ceil(self.ntheta/self.ctheta))):
@@ -111,7 +116,7 @@ class SolverLam():
         for i in range(titer):
             Lu = self.fwd_lam(u)
             grad = self.adj_lam(Lu-data) * 1 / \
-                self.ntheta/self.n/self.n/self.nz
+                self.ntheta/self.nx/self.ny/self.nz
 
             if i == 0:
                 d = -grad
@@ -219,7 +224,7 @@ class SolverLam():
             # Lagrangians difference between two iterations
             if (np.mod(m, 1) == 0):
                 lagr = self.take_lagr(
-                    psi, phi, data, h, e, lamd, mu, alpha, rho, tau, model)
+                    psi, data, h, lamd, alpha, rho)
                 print("%d/%d) rho=%.2e, Lagrangian terms:   %.2e %.2e %.2e %.2e, Sum: %.2e" %
                       (m, niter, rho, *lagr))
         return u
