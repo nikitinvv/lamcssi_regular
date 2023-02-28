@@ -54,10 +54,17 @@ class SolverLam():
         """Forward laminography operator data = Lu"""
         
         # result
+<<<<<<< HEAD
         data = np.zeros([self.ntheta, self.deth, self.detw], dtype='float32')    
 
         # GPU memory
         data_gpu = cp.zeros([self.ctheta, self.deth, self.detw], dtype='float32')
+=======
+        data = np.zeros([self.ntheta, self.deth, self.n], dtype='complex64')    
+
+        # GPU memory
+        data_gpu = cp.zeros([self.ctheta, self.deth, self.n], dtype='complex64')
+>>>>>>> e0130311d1a3964eb2df24143783678428c6d44a
         theta_gpu = cp.zeros([self.ctheta], dtype='float32')                
         u_gpu = cp.asarray(u)
         # processing by chunks in angles
@@ -75,14 +82,19 @@ class SolverLam():
             
             # copy result to CPU
             data[st:end] = data_gpu[:end-st].get()
-        return data
+        return data/ np.sqrt(self.ntheta*self.n)
 
     def adj_lam(self,data):
         """adjoint laminography operator u = L*data"""
         
         # GPU memory
+<<<<<<< HEAD
         data_gpu = cp.zeros([self.ctheta, self.deth, self.detw], dtype='float32')
         u_gpu = cp.zeros([self.nz, self.ny, self.nx], dtype='float32')
+=======
+        data_gpu = cp.zeros([self.ctheta, self.deth, self.n], dtype='complex64')
+        u_gpu = cp.zeros([self.nz, self.n, self.n], dtype='complex64')
+>>>>>>> e0130311d1a3964eb2df24143783678428c6d44a
         theta_gpu = cp.zeros([self.ctheta], dtype='float32')                
         
         for it in range(int(np.ceil(self.ntheta/self.ctheta))):
@@ -98,7 +110,7 @@ class SolverLam():
             adj(u_gpu,data_gpu,theta_gpu,self.lamino_angle)   
         u =  u_gpu.get()
         
-        return u    
+        return u/np.sqrt(self.ntheta*self.n)    
     
     def line_search(self, minf, gamma, Lu, Ld):
         """Line search for the step sizes gamma"""
@@ -106,6 +118,15 @@ class SolverLam():
             gamma *= 0.5
         return gamma
 
+    def line_search_ext(self, minf, gamma, Lu, Ld, gu, gd):
+        """Line search for the step sizes gamma"""
+        while(minf(Lu, gu)-minf(Lu+gamma*Ld, gu+gamma*gd) < 0):
+            gamma *= 0.5
+            if(gamma < 1e-8):
+                gamma = 0
+                break
+        return gamma
+    
     def cg_lam(self, data, u, titer, dbg=False):
         """CG solver for ||Lu-data||_2"""
         
@@ -115,8 +136,12 @@ class SolverLam():
             return f
         for i in range(titer):
             Lu = self.fwd_lam(u)
+<<<<<<< HEAD
             grad = self.adj_lam(Lu-data) * 1 / \
                 self.ntheta/self.nx/self.ny/self.nz
+=======
+            grad = self.adj_lam(Lu-data)
+>>>>>>> e0130311d1a3964eb2df24143783678428c6d44a
 
             if i == 0:
                 d = -grad
@@ -125,8 +150,8 @@ class SolverLam():
                     (cp.sum(np.conj(d)*(grad-grad0))+1e-32)*d
             # line search
             Ld = self.fwd_lam(d)
-            gamma = 0.5#*self.line_search(minf, 1, Lu, Ld)
-            grad0 = grad
+            gamma = 0.5*self.line_search(minf, 8, Lu, Ld)
+            grad0 = grad.copy()
             # update step
             u = u + gamma*d
             # check convergence
@@ -137,24 +162,25 @@ class SolverLam():
     
     
     def fwd_reg(self, u):
-        """Forward operator for regularization (J)"""
-        res = cp.zeros([3, *u.shape], dtype='float32')
+        """Forward operator for regularization"""
+        res = np.zeros([3, *u.shape], dtype='complex64')
         res[0, :, :, :-1] = u[:, :, 1:]-u[:, :, :-1]
         res[1, :, :-1, :] = u[:, 1:, :]-u[:, :-1, :]
         res[2, :-1, :, :] = u[1:, :, :]-u[:-1, :, :]
+        res*=1/np.sqrt(3)
         return res
 
     
     def adj_reg(self, gr):
-        """Adjoint operator for regularization (J^*)"""
-        res = cp.zeros(gr.shape[1:], dtype='float32')
+        """Adjoint operator for regularization"""
+        res = np.zeros(gr.shape[1:], dtype='complex64')
         res[:, :, 1:] = gr[0, :, :, 1:]-gr[0, :, :, :-1]
         res[:, :, 0] = gr[0, :, :, 0]
         res[:, 1:, :] += gr[1, :, 1:, :]-gr[1, :, :-1, :]
         res[:, 0, :] += gr[1, :, 0, :]
         res[1:, :, :] += gr[2, 1:, :, :]-gr[2, :-1, :, :]
         res[0, :, :] += gr[2, 0, :, :]
-        res *= -1#2/np.sqrt(3)  # normalization
+        res *= -1/np.sqrt(3)  # normalization
         return res
     
     
@@ -179,29 +205,35 @@ class SolverLam():
             rho *= 0.5
         return rho
     
-    def cg_lam_ext(self, data, g, init, rho, titer):
+    def cg_lam_ext(self, data, g, init, rho, titer, dbg=True):
         """extended CG solver for ||Lu-data||_2+rho||gu-g||_2"""
         # minimization functional
         def minf(Lu, gu):
-            return cp.linalg.norm(Lu-data)**2+rho*cp.linalg.norm(gu-g)**2
+            return np.linalg.norm(Lu-data)**2+rho*np.linalg.norm(gu-g)**2
         u = init.copy()
         
         for i in range(titer):
-            Lu = self.fwd_tomo_batch(u)
+            Lu = self.fwd_lam(u)
             gu = self.fwd_reg(u)
-            grad = self.adj_tomo_batch(Lu-data) + \
+            grad = self.adj_lam(Lu-data) + \
                 rho*self.adj_reg(gu-g)
-            # Dai-Yuan direction
+            # Dai-Yuan direction            
             if i == 0:
                 d = -grad
             else:
-                d = -grad+cp.linalg.norm(grad)**2 / \
-                    (cp.sum(cp.conj(d)*(grad-grad0))+1e-32)*d
-            grad0 = grad
+                d = -grad+np.linalg.norm(grad)**2 / \
+                    (np.sum(np.conj(d)*(grad-grad0))+1e-32)*d                
+            grad0 = grad.copy()
+            Ld = self.fwd_lam(d)
+            gd = self.fwd_reg(d)
             # line search
-            gamma = 0.5
+            gamma = 0.5*self.line_search_ext(minf, 8, Lu, Ld,gu,gd)
             # update step
             u = u + gamma*d
+            # check convergence
+            if (dbg == True):
+                print("%4d, gamma %.3e, fidelity %.7e" %
+                      (i, gamma, minf(Lu,gu)))
         return u
     
     
@@ -212,7 +244,7 @@ class SolverLam():
             # keep previous iteration for penalty updates
             h0 = h.copy()
             # laminography problem
-            u = self.cg_lam_ext(data, g-lamd/rho, u, rho, titer)
+            u = self.cg_lam_ext(data, psi-lamd/rho, u, rho, titer)            
             # regularizer problem
             psi = self.solve_reg(u, lamd, rho, alpha)
             # h updates
@@ -220,11 +252,16 @@ class SolverLam():
             # lambda update
             lamd = lamd + rho * (h-psi)
             # update rho for a faster convergence
-            rho = self.update_penalty(psi, h, h0,rho)
+            rho = self.update_penalty(psi, h, h0, rho)
             # Lagrangians difference between two iterations
             if (np.mod(m, 1) == 0):
+                # print(m)
                 lagr = self.take_lagr(
+<<<<<<< HEAD
                     psi, data, h, lamd, alpha, rho)
+=======
+                    u, psi, data, h, lamd, alpha,rho)
+>>>>>>> e0130311d1a3964eb2df24143783678428c6d44a
                 print("%d/%d) rho=%.2e, Lagrangian terms:   %.2e %.2e %.2e %.2e, Sum: %.2e" %
                       (m, niter, rho, *lagr))
         return u
@@ -232,11 +269,11 @@ class SolverLam():
     
     def take_lagr(self, u, psi, data, h, lamd, alpha, rho):
         """ Lagrangian terms for monitoring convergence"""
-        lagr = cp.zeros(7, dtype="float32")
+        lagr = np.zeros(5, dtype="float32")
         Lu = self.fwd_lam(u)
-        lagr[0] += 0.5*np.linalg.norm(Lu-data)**2
-        lagr[1] = alpha*cp.sum(np.sqrt(cp.real(cp.sum(psi*cp.conj(psi), 0))))        
-        lagr[2] = cp.sum(cp.real(cp.conj(lamd)*(h-psi)))        
-        lagr[3] = rho/2*cp.linalg.norm(h-psi)**2
-        lagr[4] = cp.sum(lagr[:4])
+        lagr[0] += np.linalg.norm(Lu-data)**2
+        lagr[1] = alpha*np.sum(np.sqrt(np.real(np.sum(psi*np.conj(psi), 0))))        
+        lagr[2] = np.sum(np.real(np.conj(lamd)*(h-psi)))        
+        lagr[3] = rho*np.linalg.norm(h-psi)**2
+        lagr[4] = np.sum(lagr[:4])
         return lagr

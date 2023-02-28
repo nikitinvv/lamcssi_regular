@@ -66,7 +66,7 @@ extern "C" {
         int ur = 0;
         int vr = 0;        
         
-        float f0 = 0;
+        float2 f0 = {0,0};
         float theta0 = 0;
         float cphi = __cosf(phi);
         float sphi = __sinf(phi);
